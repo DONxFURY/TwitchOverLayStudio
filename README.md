@@ -379,6 +379,53 @@ Export **GIF** (1-bit alpha, 256 colours, capped at 960 px wide), **APNG**
 position. Seamless loop is on by default: every wave is quantised to whole
 cycles across the clip, so the last frame flows back into the first.
 
+## 3D logo spinner — flat logo → spinning solid
+
+**3D** in the top bar (or *Add → 3D logo spinner*, or *Export → 3D logo
+spinner*) turns a flat logo into a solid you can spin. No WebGL, no mesh files,
+no photogrammetry — it is a real extrusion rendered on the same 2D canvas as
+the rest of the studio.
+
+Drop in a PNG with a transparent background; the logo is extruded, lit like a
+machined badge and put on a turntable.
+
+| Control | What it does |
+| --- | --- |
+| Depth | slab thickness, as a share of the logo width |
+| Bevel | rounds the rim — 0 is a sharp slab, 100% a coin edge |
+| Edge detail | slices in the stack (8–64); higher is smoother |
+| Material | **Painted** (your artwork on the walls), **Gold**, **Steel**, **Tint** |
+| Light angle / Contrast | direction and strength of the key light |
+| Sheen | travelling specular highlight |
+| Spin / Speed / Direction | full 360° turntable |
+| Tilt / Sway | pitch the model, or rock it instead of spinning |
+| Reflection / Shadow | floor reflection and a soft contact shadow |
+
+**How it is 3D without WebGL.** The artwork is drawn as a stack of up to 64
+copies displaced along the model's Z axis. The two outermost copies carry the
+real artwork — the back one mirrored, so the reverse side is right — and
+anything between them uses the material. The stack is projected
+orthographically (`x' = x·cos(yaw) + z·sin(yaw)`,
+`y' = y·cos(pitch) − z·sin(pitch)`) and painted far-to-near, so the exposed
+slice edges become a solid extruded rim with real parallax. A directional
+gradient plus a masked specular band do the lighting. The projection is
+deterministic, so the preview, the PNG and every exported frame are identical.
+
+Drag the model to turn it by hand — dragging switches the turntable off so the
+angle stays where you put it. **Reset view** restores the default turntable;
+the six presets (Turntable, Gold coin, Chrome badge, Showcase, Hover, Flat
+spin) set the whole look at once.
+
+Export **GIF** (1-bit alpha, 256 colours, capped at 960 px wide), **APNG** (full
+alpha, so soft reflections survive) or a **PNG frame** at the current angle. The
+background is always transparent, so the result drops straight into OBS as an
+alert, a spinning logo layer or a panel graphic.
+
+Two honest limits: it extrudes a single image rather than scanning a real
+object, so it reads best on logos with a clear silhouette and a transparent
+background (a photograph gets a smeared rim); and the rim is lit as one
+material, so fine interior detail does not get its own highlights.
+
 ## Project layout
 
 ```
@@ -406,6 +453,7 @@ js/animexport.js      shared offline frame renderer for transparent formats
 js/gif.js             from-scratch GIF89a encoder (median cut + LZW)
 js/apng.js            APNG assembler (acTL / fcTL / fdAT)
 js/imageanim.js       image animator: 24 effects, markers, recipes
+js/logo3d.js          logo → extruded 3D spinner: slices, lighting, presets
 js/util.js            dependency-free helpers
 assets/icons/         bundled Tabler icon licence
 ```

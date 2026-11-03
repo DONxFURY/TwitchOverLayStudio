@@ -62,6 +62,7 @@
       <button id="btnPNG" class="btn ghost" title="Export current scene as PNG">PNG</button>
       <button id="btnVideo" class="btn ghost" title="Render a video (MP4)">MP4</button>
       <button class="btn ghost" data-animate title="Animate a still image into a transparent GIF">Animate</button>
+      <button class="btn ghost" data-logo3d title="Extrude a logo into a spinning 3D solid">3D</button>
       <button id="btnPreview" class="btn" title="Full-screen stage (Esc)"><svg class="ic"><use href="#i-play"/></svg>Preview</button>
       <button id="btnExport" class="btn primary" title="Export the whole bundle">Export<span class="btn-kbd">zip</span></button>
       <button id="btnPalette" class="btn ic-btn" title="Command palette (Ctrl+K)"><svg class="ic"><use href="#i-command"/></svg></button>
@@ -96,6 +97,10 @@
         <button class="ia-cta" data-animate title="Turn still artwork into a transparent animated GIF">
           <svg class="ic"><use href="#i-sparkle"/></svg>
           <span><b>Animate an image</b><i>PNG → transparent GIF · APNG</i></span>
+        </button>
+        <button class="ia-cta" data-logo3d title="Turn a flat logo into a spinning 3D solid">
+          <svg class="ic"><use href="#i-layers"/></svg>
+          <span><b>3D logo spinner</b><i>Logo → extruded solid · 360° · GIF</i></span>
         </button>
         <div class="add-grid" id="addGrid">
           <button data-add="panel"><svg class="ic"><use href="#i-layers"/></svg>Panel</button>
@@ -269,6 +274,7 @@
 <script src="js/icondata.js"></script>
 <script src="js/iconpicker.js"></script>
 <script src="js/imageanim.js"></script>
+<script src="js/logo3d.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

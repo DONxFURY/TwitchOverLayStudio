@@ -33,6 +33,7 @@
       this.restorePrefs();
       this.bindTop();
       this.bindAnimate();
+      this.bindLogo3d();
       this.bindTabs();
       this.bindScenes();
       this.bindAdd();
@@ -590,6 +591,12 @@
       });
     },
 
+    bindLogo3d: function () {
+      U.$$('[data-logo3d]').forEach(function (b) {
+        b.addEventListener('click', function () { OS.Logo3D.open(); });
+      });
+    },
+
     openExport: function () {
       var box = this.openModal(
         '<h2>Export</h2>' +
@@ -604,6 +611,7 @@
         '<button data-x="anim"><span class="k">GIF</span><span><b>Animated · GIF / APNG</b><span>Transparent animated file for overlays and socials</span></span></button>' +
         '<button data-x="twitch"><span class="k">T</span><span><b>Twitch · panel / banner</b><span>Just the selection, fitted to exact Twitch sizes</span></span></button>' +
         '<button data-x="imageanim"><span class="k">✦</span><span><b>Animate an image</b><span>Still artwork → transparent GIF with glow, embers, sheen</span></span></button>' +
+        '<button data-x="logo3d"><span class="k">◈</span><span><b>3D logo spinner</b><span>Logos are mapped onto a solid model you can spin</span></span></button>' +
         '<button data-x="json"><span class="k">{ }</span><span><b>Project · .json</b><span>Backup, or hand it to another editor</span></span></button>' +
         '</div>' +
         '<div class="modal-close"><button class="btn" data-close="1">Close</button></div>'
@@ -624,6 +632,7 @@
         if (what === 'anim') App.openVideo('gif');
         if (what === 'twitch') App.openTwitch();
         if (what === 'imageanim') OS.ImageAnim.open();
+        if (what === 'logo3d') OS.Logo3D.open();
       });
     },
 
