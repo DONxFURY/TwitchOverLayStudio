@@ -1,0 +1,23 @@
+{
+  "name": "twitch-overlay-studio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local, zero-dependency Twitch overlay designer: scenes, animation, 26 themes, 50 vector frames, and OBS bundle, MP4, transparent GIF/APNG export.",
+  "keywords": [
+    "twitch",
+    "streaming",
+    "overlay",
+    "obs",
+    "canvas",
+    "gif",
+    "apng",
+    "video"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=14"
+  },
+  "scripts": {
+    "start": "node server.js"
+  }
+}
