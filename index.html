@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Twitch Overlay Studio</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h9a6 6 0 0 1 0 12H9"/></symbol>
+  <symbol id="i-redo" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9h-9a6 6 0 0 0 0 12h4"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 13 9 5 9-5"/></symbol>
+  <symbol id="i-type" viewBox="0 0 24 24"><path d="M4 6h16M12 6v13"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="m4 17 5-4.5 4 3.5 3-2.5 4 3.5"/></symbol>
+  <symbol id="i-cam" viewBox="0 0 24 24"><rect x="2.5" y="6.5" width="19" height="13" rx="2.5"/><circle cx="12" cy="13" r="3.6"/><path d="M8.5 6.5 10 4h4l1.5 2.5"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M20.5 12a7.5 7.5 0 0 1-10.9 6.7L4.5 20l1.3-4.6A7.5 7.5 0 1 1 20.5 12Z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+  <symbol id="i-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17"/><path d="M12 20.5a8.5 8.5 0 0 0 0-17Z" fill="currentColor" stroke="none" opacity=".5"/></symbol>
+  <symbol id="i-pack" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.6"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.6"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.6"/></symbol>
+  <symbol id="i-tag" viewBox="0 0 24 24"><path d="M20 13.5 13.5 20 4 10.5V4h6.5L20 13.5Z"/><circle cx="8" cy="8" r="1.4"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="12" height="12" rx="2.2"/><path d="M15.5 5.5H6a2 2 0 0 0-2 2v9.5"/></symbol>
+  <symbol id="i-front" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 8 5-5 5 5"/><path d="M4 21h16"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M12 15V3"/><path d="m7 10 5 5 5-5"/><path d="M4 21h16"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.4"/><path d="M8.5 10.5V7.8a3.5 3.5 0 0 1 7 0v2.7"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 20h16"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7Z"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.3a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1.1.9-1.1 1.8"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-command" viewBox="0 0 24 24"><path d="M9 6.5a2.5 2.5 0 1 0-2.5 2.5H15a2.5 2.5 0 1 0-2.5 2.5v-3"/><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M9 17.5A2.5 2.5 0 1 0 11.5 15"/><path d="M15 6.5A2.5 2.5 0 1 1 17.5 9"/></symbol>
+  <symbol id="i-scene" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.4"/><path d="M3 9h18"/></symbol>
+  <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M11 3.5 12.9 9 18 11l-5.1 2L11 18.5 9.1 13 4 11l5.1-2Z"/><path d="M18.5 3v3.2M17 4.6h3"/></symbol>
+</svg>
+
+<div id="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="mark">◈</span>
+      <span class="brand-text">
+        <strong>Overlay Studio</strong>
+        <i>for Twitch</i>
+      </span>
+    </div>
+
+    <div class="project">
+      <input id="projectName" class="proj-name" value="Untitled Overlay Bundle" spellcheck="false" aria-label="Project name">
+      <span class="proj-badge" id="projBadge">draft</span>
+    </div>
+
+    <div class="top-actions">
+      <div class="btn-group">
+        <button id="btnUndo" class="btn ic-btn" title="Undo (Ctrl+Z)"><svg class="ic"><use href="#i-undo"/></svg></button>
+        <button id="btnRedo" class="btn ic-btn" title="Redo (Ctrl+Shift+Z)"><svg class="ic"><use href="#i-redo"/></svg></button>
+      </div>
+      <button id="btnImport" class="btn ghost">Import</button>
+      <button id="btnPNG" class="btn ghost" title="Export current scene as PNG">PNG</button>
+      <button id="btnVideo" class="btn ghost" title="Render a video (MP4)">MP4</button>
+      <button class="btn ghost" data-animate title="Animate a still image into a transparent GIF">Animate</button>
+      <button id="btnPreview" class="btn" title="Full-screen stage (Esc)"><svg class="ic"><use href="#i-play"/></svg>Preview</button>
+      <button id="btnExport" class="btn primary" title="Export the whole bundle">Export<span class="btn-kbd">zip</span></button>
+      <button id="btnPalette" class="btn ic-btn" title="Command palette (Ctrl+K)"><svg class="ic"><use href="#i-command"/></svg></button>
+      <button id="btnHelp" class="btn ic-btn" title="Shortcuts and help"><svg class="ic"><use href="#i-help"/></svg></button>
+      <input type="file" id="fileImport" accept=".json,application/json" hidden>
+    </div>
+  </header>
+
+  <main class="workspace">
+
+    <!-- ============================== left ============================== -->
+    <aside class="side left" aria-label="Library">
+      <nav class="tabs" id="leftTabs">
+        <button data-tab="scenes" class="active" title="Scenes" aria-label="Scenes"><svg class="ic"><use href="#i-scene"/></svg><span>Scenes</span></button>
+        <button data-tab="add" title="Add elements" aria-label="Add elements"><svg class="ic"><use href="#i-plus"/></svg><span>Add</span></button>
+        <button data-tab="themes" title="Themes" aria-label="Themes"><svg class="ic"><use href="#i-theme"/></svg><span>Themes</span></button>
+        <button data-tab="packs" title="Scene packs" aria-label="Scene packs"><svg class="ic"><use href="#i-pack"/></svg><span>Packs</span></button>
+        <button data-tab="brand" title="Brand tokens" aria-label="Brand tokens"><svg class="ic"><use href="#i-tag"/></svg><span>Brand</span></button>
+      </nav>
+
+      <div class="tab-panel active" data-panel="scenes">
+        <div class="panel-head">
+          <h3>Scenes</h3>
+          <button id="btnAddScene" class="mini"><svg class="ic"><use href="#i-plus"/></svg>Blank</button>
+        </div>
+        <div id="sceneList" class="scene-list"></div>
+        <p class="tiny">Each scene exports as its own OBS browser source.</p>
+      </div>
+
+      <div class="tab-panel" data-panel="add">
+        <div class="panel-head"><h3>Elements</h3></div>
+        <button class="ia-cta" data-animate title="Turn still artwork into a transparent animated GIF">
+          <svg class="ic"><use href="#i-sparkle"/></svg>
+          <span><b>Animate an image</b><i>PNG → transparent GIF · APNG</i></span>
+        </button>
+        <div class="add-grid" id="addGrid">
+          <button data-add="panel"><svg class="ic"><use href="#i-layers"/></svg>Panel</button>
+          <button data-add="text"><svg class="ic"><use href="#i-type"/></svg>Text</button>
+          <button data-add="image"><svg class="ic"><use href="#i-image"/></svg>Image</button>
+          <button data-add="camera"><svg class="ic"><use href="#i-cam"/></svg>Camera</button>
+          <button data-add="chat"><svg class="ic"><use href="#i-chat"/></svg>Chat</button>
+          <button data-add="clock"><svg class="ic"><use href="#i-clock"/></svg>Clock</button>
+          <button data-add="frame-rim"><svg class="ic"><use href="#i-layers"/></svg>Rim frame</button>
+          <button data-add="frame-tech"><svg class="ic"><use href="#i-layers"/></svg>Tech panel</button>
+          <button data-add="frame-hud"><svg class="ic"><use href="#i-layers"/></svg>HUD bar</button>
+          <button data-add="frame-hex"><svg class="ic"><use href="#i-layers"/></svg>Hex card</button>
+          <button data-add="icon"><svg class="ic"><use href="#i-sparkle"/></svg>Icon</button>
+        </div>
+        <div class="panel-head spaced"><h3>Rim frames · <span id="frameCount">50</span></h3></div>
+        <div class="frame-grid" id="frameGrid"></div>
+
+        <div class="panel-head spaced"><h3>Icons · <span id="iconCount">0</span> · Tabler MIT</h3></div>
+        <div class="icon-tools">
+          <input id="iconSearch" class="icon-search" type="search" placeholder="Search icons — heart, bolt, twitch…" autocomplete="off" spellcheck="false">
+          <input id="iconColor" class="icon-color" type="color" value="#eaf6ff" title="Icon colour">
+        </div>
+        <div class="icon-grid" id="iconGrid"></div>
+
+        <div class="panel-head spaced"><h3>Components</h3></div>
+        <div class="comp-list" id="compList">
+          <button data-comp="label">Label button</button>
+          <button data-comp="alert">Alert frame</button>
+          <button data-comp="title">Title block</button>
+          <button data-comp="divider">Divider rail</button>
+          <button data-comp="socials">Social row</button>
+          <button data-comp="webcam">Webcam frame</button>
+        </div>
+      </div>
+
+      <div class="tab-panel" data-panel="themes">
+        <div class="panel-head"><h3>Themes</h3></div>
+        <div id="themeList" class="theme-list"></div>
+        <p class="tiny">Layers store colour tokens, so a theme swap recolours every scene instantly.</p>
+      </div>
+
+      <div class="tab-panel" data-panel="packs">
+        <div class="panel-head"><h3>Scene packs</h3></div>
+        <div id="templateList" class="tpl-list"></div>
+        <p class="tiny">Hover a pack and pick <b>Replace</b> or <b>Add</b>.</p>
+      </div>
+
+      <div class="tab-panel" data-panel="brand">
+        <div class="panel-head"><h3>Brand</h3></div>
+        <div id="brandForm" class="brand-form"></div>
+        <p class="tiny">Feeds <code>{{channel}}</code>, <code>{{twitter}}</code> and friends across every text layer.</p>
+      </div>
+    </aside>
+
+    <!-- ============================= center ============================= -->
+    <section class="center">
+      <div class="stage-top">
+        <div class="crumbs">
+          <span class="crumb-dim">Scene</span>
+          <span id="sceneName">—</span>
+          <span class="sep">/</span>
+          <span id="stageMeta" class="crumb-dim">1920 × 1080</span>
+        </div>
+        <div class="stage-tools">
+          <div class="zoom-group">
+            <button id="zoomOut" class="tiny-btn" title="Zoom out">−</button>
+            <button id="zoomLabel" class="zoom-label" title="Reset zoom">100%</button>
+            <button id="zoomIn" class="tiny-btn" title="Zoom in">+</button>
+            <button id="zoomFit" class="tiny-btn wide" title="Fit to window">Fit</button>
+          </div>
+          <label class="switch"><input type="checkbox" id="snapToggle" checked><span>Snap</span></label>
+          <label class="switch"><input type="checkbox" id="bgToggle" checked><span>Background</span></label>
+        </div>
+      </div>
+
+      <div class="stage-scroll" id="stageScroll">
+        <div class="stage-fit" id="stageFit">
+          <div class="stage" id="stage">
+            <canvas id="stageBg" width="1920" height="1080"></canvas>
+            <div class="stage-layers" id="stageLayers"></div>
+          </div>
+          <div class="stage-guides" id="stageGuides"></div>
+          <div class="stage-marquee" id="stageMarquee"></div>
+          <div class="stage-sel" id="stageSel">
+            <div class="sel-outline"></div>
+            <i class="handle handle-nw" data-h="nw"></i>
+            <i class="handle handle-n" data-h="n"></i>
+            <i class="handle handle-ne" data-h="ne"></i>
+            <i class="handle handle-e" data-h="e"></i>
+            <i class="handle handle-se" data-h="se"></i>
+            <i class="handle handle-s" data-h="s"></i>
+            <i class="handle handle-sw" data-h="sw"></i>
+            <i class="handle handle-w" data-h="w"></i>
+            <i class="handle handle-rot" data-h="rot"></i>
+            <span class="sel-size" id="selSize"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="quickbar hidden" id="quickbar">
+        <span class="qb-name" id="qbarName">layer</span>
+        <span class="qb-sep"></span>
+        <button data-q="dup" title="Duplicate (Ctrl+D)"><svg class="ic"><use href="#i-copy"/></svg></button>
+        <button data-q="front" title="Bring to front"><svg class="ic"><use href="#i-front"/></svg></button>
+        <button data-q="back" title="Send to back"><svg class="ic"><use href="#i-back"/></svg></button>
+        <button data-q="lock" title="Lock / unlock"><svg class="ic"><use href="#i-lock"/></svg></button>
+        <button data-q="delete" class="danger" title="Delete (Del)"><svg class="ic"><use href="#i-trash"/></svg></button>
+      </div>
+    </section>
+
+    <!-- ============================== right ============================= -->
+    <aside class="side right" aria-label="Inspector">
+      <div class="insp-head">
+        <div class="insp-title" id="inspTitle">No selection</div>
+        <div class="insp-sub" id="inspSub">Select a layer to edit it</div>
+      </div>
+      <div class="insp" id="inspector"></div>
+      <div class="layers-head">
+        <span>Layers</span>
+        <span id="layerCount" class="crumb-dim">0</span>
+      </div>
+      <div class="layers" id="layers"></div>
+    </aside>
+  </main>
+
+  <footer class="statusbar">
+    <span id="statusHint">Drag to move · Shift+click multi-select · Ctrl+scroll zoom · Middle-drag pan · Ctrl+K commands</span>
+    <span class="status-right">
+      <span id="statusScene"></span>
+      <span id="statusSaved" class="ok">saved</span>
+    </span>
+  </footer>
+</div>
+
+<div id="quickbar-clone"></div>
+<div id="ctxMenu" class="ctx hidden" role="menu"></div>
+
+<div id="palette" class="palette hidden">
+  <div class="palette-box" role="dialog" aria-label="Command palette">
+    <div class="palette-input">
+      <svg class="ic"><use href="#i-search"/></svg>
+      <input id="paletteInput" placeholder="Search scenes, layers, themes, actions…" spellcheck="false" autocomplete="off">
+      <kbd>esc</kbd>
+    </div>
+    <div id="paletteList" class="palette-list"></div>
+    <div class="palette-foot"><kbd>↑</kbd><kbd>↓</kbd> navigate <kbd>↵</kbd> run</div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+<div id="modal" class="modal hidden"><div class="modal-box" id="modalBox"></div></div>
+<datalist id="fontlist"></datalist>
+
+<script src="js/util.js"></script>
+<script src="js/zip.js"></script>
+<script src="js/painter.js"></script>
+<script src="js/presets.js"></script>
+<script src="js/animate.js"></script>
+<script src="js/frames.js"></script>
+<script src="js/model.js"></script>
+<script src="js/render.js"></script>
+<script src="js/editor.js"></script>
+<script src="js/inspector.js"></script>
+<script src="js/exporter.js"></script>
+<script src="js/mp4.js"></script>
+<script src="js/video.js"></script>
+<script src="js/gif.js"></script>
+<script src="js/apng.js"></script>
+<script src="js/animexport.js"></script>
+<script src="js/images.js"></script>
+<script src="js/icondata.js"></script>
+<script src="js/iconpicker.js"></script>
+<script src="js/imageanim.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
