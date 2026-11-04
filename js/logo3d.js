@@ -58,7 +58,11 @@
     reflect: true, shadow: true,
 
     outW: 720, fps: 20, seconds: 4,
-    time: 0, playing: true,
+    time: 0, playing: true, fpsNow: 0, buildMs: 0,
+
+    /* gpu: draw the slice stack with WebGL2 when the browser has it; the 2D
+       path stays as the fallback and paints the identical model. */
+    gpu: true, matRev: 0, renderer: null,
 
     shell: null, canvas: null, raf: 0, last: 0,
     busy: false, cancelled: false
@@ -79,6 +83,14 @@
       return 'filter' in c && c.filter !== undefined;
     } catch (e) { return false; }
   })();
+
+  /* Lazily created so a browser without WebGL2 never pays for the attempt, and
+     a renderer that dies mid-session is not rebuilt every frame. */
+  function renderer() {
+    if (!S.gpu) return null;
+    if (S.renderer === null && OS.GL3D) S.renderer = OS.GL3D.create();
+    return S.renderer && !S.renderer.dead() ? S.renderer : null;
+  }
 
   /* ---------------------------------------------------------------- maths */
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
@@ -114,7 +126,7 @@
   /* ------------------------------------------------------------- prepare */
   function prepare() {
     if (!S.img) return;
-    var maxW = 640;
+    var maxW = 1024;
     var k = Math.min(1, maxW / Math.max(1, S.w));
     var w = Math.max(16, Math.round(S.w * k));
     var h = Math.max(16, Math.round(S.h * k));
@@ -137,6 +149,7 @@
     b.restore();
 
     buildMaterial();
+    S.matRev++;
     S.ready = true;
   }
 
@@ -147,7 +160,12 @@
     var c = matC.getContext('2d');
     c.globalCompositeOperation = 'source-over';
     c.drawImage(faceF, 0, 0, w, h);
-    c.globalCompositeOperation = 'source-in';
+
+    /* Painted walls have to keep the artwork's alpha at 1: 'source-in' with a
+       translucent gradient replaces the alpha too, which leaves the extrusion
+       see-through and makes the solid look like a hollow shell. Metals swap
+       the colour outright, so they use opaque stops and 'source-in'. */
+    c.globalCompositeOperation = S.mode === 'art' ? 'source-atop' : 'source-in';
 
     var g = c.createLinearGradient(0, 0, w * 0.35, h);
     if (S.mode === 'gold') {
@@ -171,14 +189,16 @@
       g.addColorStop(1, mix(base, [0, 0, 0], 0.78));
     } else {
       /* painted: keep the artwork itself on the walls, just lift the top edge */
-      g.addColorStop(0, 'rgba(255,255,255,0.14)');
+      g.addColorStop(0, 'rgba(255,255,255,0.16)');
       g.addColorStop(0.45, 'rgba(255,255,255,0)');
-      g.addColorStop(0.75, 'rgba(0,0,0,0.12)');
-      g.addColorStop(1, 'rgba(0,0,0,0.34)');
+      g.addColorStop(0.75, 'rgba(0,0,0,0.1)');
+      g.addColorStop(1, 'rgba(0,0,0,0.3)');
     }
     c.fillStyle = g;
     c.fillRect(0, 0, w, h);
     c.globalCompositeOperation = 'source-over';
+    /* tells the GPU renderer its three textures are stale */
+    S.matRev++;
   }
 
   /* ------------------------------------------------------------- lighting */
@@ -253,7 +273,7 @@
       list.push({
         dz: zf * depthPx * 0.5,
         u: u,
-        shade: 0.26 + 0.74 * Math.pow(edge, 0.45),
+        shade: 0.36 + 0.64 * Math.pow(edge, 0.5),
         taper: 1 - S.bevel * Math.pow(edge, 1.7) * 0.085,
         key: zf * cY
       });
@@ -266,18 +286,30 @@
     mc.imageSmoothingEnabled = true;
     mc.imageSmoothingQuality = 'high';
 
-    for (var j = 0; j < list.length; j++) {
-      var sl = list[j];
-      var content = sl.u >= 0.9 ? faceF : (sl.u <= 0.1 ? faceB : matC);
-      var sw = w0 * sl.taper;
-      var sh = h0 * sl.taper;
-      mc.save();
-      mc.translate(cx + sl.dz * sY, cy - sl.dz * sP);
-      mc.scale(kx, ky);
-      if (HAS_FILTER) mc.filter = 'brightness(' + sl.shade.toFixed(3) + ')';
-      else mc.globalAlpha = Math.min(1, 0.3 + sl.shade * 0.75);
-      mc.drawImage(content, -sw / 2, -sh / 2, sw, sh);
-      mc.restore();
+    /* The stack is 36–64 transformed blits per frame and that is the hot path.
+       WebGL2 draws the same instances in one call and composites them onto
+       modelC, so everything downstream is unchanged. */
+    var gpu = renderer();
+    var drawn = gpu && gpu.paint({
+      target: mc, W: W, H: H, list: list, cx: cx, cy: cy, kx: kx, ky: ky,
+      w0: w0, h0: h0, sY: sY, sP: sP, rev: S.matRev,
+      faceF: faceF, faceB: faceB, mat: matC
+    });
+
+    if (!drawn) {
+      for (var j = 0; j < list.length; j++) {
+        var sl = list[j];
+        var content = sl.u >= 0.9 ? faceF : (sl.u <= 0.1 ? faceB : matC);
+        var sw = w0 * sl.taper;
+        var sh = h0 * sl.taper;
+        mc.save();
+        mc.translate(cx + sl.dz * sY, cy - sl.dz * sP);
+        mc.scale(kx, ky);
+        if (HAS_FILTER) mc.filter = 'brightness(' + sl.shade.toFixed(3) + ')';
+        else mc.globalAlpha = Math.min(1, 0.3 + sl.shade * 0.75);
+        mc.drawImage(content, -sw / 2, -sh / 2, sw, sh);
+        mc.restore();
+      }
     }
 
     buildLight(W, H, cx, cy, w0, h0, time);
@@ -341,16 +373,60 @@
     drawFrame(ctx, S.canvas.width, S.canvas.height, S.time);
   }
 
+  /* The canvas backs itself at the screen's pixel density instead of a fixed
+     960 × 672, so the model is sharp on HiDPI displays and fills the stage at
+     any panel size. Capped so a 4K panel cannot ask for an absurd surface. */
+  var PREVIEW_MAX = 2560;
+  var ro = null;
+
+  function fitCanvas() {
+    if (!S.canvas || !S.canvas.parentNode) return;
+    var view = S.canvas.parentNode;
+    var vw = view.clientWidth, vh = view.clientHeight;
+    if (vw < 40 || vh < 40) return;
+    var cssW = Math.min(vw, vh / 0.7);
+    var cssH = Math.round(cssW * 0.7);
+    var dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+    var bw = Math.round(cssW * dpr), bh = Math.round(cssH * dpr);
+    if (bw < 960) { bw = 960; bh = Math.round(960 * 0.7); }
+    if (bw > PREVIEW_MAX) { bh = Math.round(bh * PREVIEW_MAX / bw); bw = PREVIEW_MAX; }
+    S.canvas.style.width = cssW + 'px';
+    S.canvas.style.height = cssH + 'px';
+    if (S.canvas.width !== bw || S.canvas.height !== bh) {
+      S.canvas.width = bw;
+      S.canvas.height = bh;
+    }
+    drawPreview();
+  }
+
+  function updateHud(fps, ms) {
+    S.fpsNow = fps;
+    S.buildMs = ms;
+    var el = q('#l3Fps');
+    if (!el) return;
+    el.textContent = Math.round(fps) + ' fps · ' + ms.toFixed(1) + ' ms';
+    el.classList.toggle('warn', fps < 50);
+  }
+
   function start() {
     stop();
     S.last = performance.now();
+    var acc = 0, frames = 0, build = 0;
     function step(now) {
       if (!S.shell || S.shell.classList.contains('hidden')) { S.raf = 0; return; }
       var dt = Math.min(0.12, (now - S.last) / 1000);
       S.last = now;
       if (S.playing && S.img) {
         S.time = (S.time + dt * S.speed) % (S.seconds || 4);
+        var t0 = performance.now();
         drawPreview();
+        build += performance.now() - t0;
+        acc += dt * 1000;
+        frames++;
+        if (acc >= 250) {
+          updateHud(frames / (acc / 1000), build / frames);
+          acc = 0; frames = 0; build = 0;
+        }
       }
       S.raf = requestAnimationFrame(step);
     }
@@ -376,7 +452,9 @@
         prepare();
         S.time = 0;
         updateMeta();
+        fitCanvas();
         drawPreview();
+        start();
         U.toast('Loaded ' + m.name + ' · ' + S.w + ' × ' + S.h);
       };
       img.onerror = function () { U.toast('That image could not be decoded', 'error'); };
@@ -434,30 +512,43 @@
     if (format === 'gif') {
       /* palette from a dozen samples, then quantise frame by frame so all the
          RGBA frames never have to be held at once */
-      var stride = Math.max(1, Math.floor(count / 12));
+      /* GIF is limited to whole-centisecond delays, so a 60 fps request is
+         resampled to 50 fps rather than encoded at a rate no player honours.
+         The scene then keeps its real duration instead of playing 20% slow. */
+      var rate = OS.Gif.rate(fps);
+      var gifCount = Math.max(1, Math.round((S.seconds || 4) * rate));
+      if (rate < fps && U.toast) U.toast('GIF tops out at 50 fps — use APNG for ' + fps + ' fps', 'warn');
+      var stride = Math.max(1, Math.floor(gifCount / 12));
       var sample = [];
-      for (i = 0; i < count; i += stride) {
+      for (i = 0; i < gifCount; i += stride) {
         if (hooks && hooks.isCancelled && hooks.isCancelled()) throw new Error('cancelled');
-        drawFrame(ctx, W, H, i / fps);
+        drawFrame(ctx, W, H, i / rate);
         sample.push(ctx.getImageData(0, 0, W, H).data);
-        if (hooks && hooks.onProgress) hooks.onProgress(0.35 * Math.min(1, (i + stride) / count), { frames: count, phase: 'palette' });
+        if (hooks && hooks.onProgress) hooks.onProgress(0.35 * Math.min(1, (i + stride) / gifCount), { frames: gifCount, phase: 'palette' });
         await sleep(0);
       }
       var pal = OS.Gif.palette(sample, 255);
       var table = OS.Gif.lut(pal);
-      var frames = [];
-      for (f = 0; f < count; f++) {
+      /* Each frame is painted, quantised and compressed straight into the file,
+         so a long high-resolution export never holds every frame at once. */
+      var plan = OS.Gif.plan(gifCount, W, H);
+      var dly = OS.Gif.delays(plan.count, rate, plan.step);
+      /* LZW runs in a worker pool when the browser allows it; the assembler
+         writes blocks in order, so the file is byte-identical either way. */
+      var g = (OS.Gif.par && OS.Gif.par({ width: W, height: H, palette: pal, loop: 0 })) ||
+              OS.Gif.writer({ width: W, height: H, palette: pal, loop: 0 });
+      for (f = 0; f < plan.count; f++) {
         if (hooks && hooks.isCancelled && hooks.isCancelled()) throw new Error('cancelled');
-        drawFrame(ctx, W, H, f / fps);
-        frames.push({
-          indices: OS.Gif.quantize(ctx.getImageData(0, 0, W, H).data, W, H, table, 128),
-          delayCs: Math.max(2, Math.round(100 / fps))
-        });
-        if (hooks && hooks.onProgress) hooks.onProgress(0.35 + 0.65 * ((f + 1) / count), { frame: f + 1, frames: count, phase: 'encoding' });
+        drawFrame(ctx, W, H, (f * plan.step) / rate);
+        await g.frame(
+          OS.Gif.quantize(ctx.getImageData(0, 0, W, H).data, W, H, table, 128),
+          dly[f]
+        );
+        if (hooks && hooks.onProgress) hooks.onProgress(0.35 + 0.65 * ((f + 1) / plan.count), { frame: f + 1, frames: plan.count, phase: 'encoding' });
         if (f % 2 === 0) await sleep(0);
       }
-      var gifBytes = OS.Gif.build({ width: W, height: H, palette: pal, frames: frames, loop: 0 });
-      return { blob: new Blob([gifBytes], { type: 'image/gif' }), ext: 'gif', format: 'gif', frames: count, width: W, height: H, alpha: '1-bit', ms: Math.round(performance.now() - t0), requested: requested };
+      var gifBytes = await g.bytes();
+      return { blob: new Blob([gifBytes], { type: 'image/gif' }), ext: 'gif', format: 'gif', frames: plan.count, fps: rate, requestedFps: fps, width: W, height: H, alpha: '1-bit', ms: Math.round(performance.now() - t0), requested: requested };
     }
 
     var pngs = [];
@@ -468,7 +559,7 @@
       if (hooks && hooks.onProgress) hooks.onProgress((i + 1) / count, { frame: i + 1, frames: count, phase: 'encoding' });
       if (i % 2 === 0) await sleep(0);
     }
-    var apng = OS.Apng.build(pngs, Math.round(1000 / fps));
+    var apng = OS.Apng.build(pngs, Math.round(1000 / fps), fps);
     return { blob: new Blob([apng], { type: 'image/png' }), ext: 'png', format: 'apng', frames: count, width: W, height: H, alpha: '8-bit', ms: Math.round(performance.now() - t0), requested: requested };
   }
 
@@ -551,12 +642,13 @@
               '<label class="l3-field"><span>Seconds</span><input type="number" data-k="seconds" min="1" max="20" step="0.5" value="' + S.seconds + '"></label>' +
               '<label class="l3-field"><span>FPS</span><select data-k="fps">' +
                 '<option value="12">12</option><option value="15">15</option><option value="20">20</option>' +
-                '<option value="24">24</option><option value="30">30</option>' +
+                '<option value="24">24</option><option value="30">30</option><option value="60">60</option><option value="100">100</option>' +
               '</select></label>' +
             '</div>' +
           '</aside>' +
           '<section class="l3-stage">' +
             '<div class="l3-view"><canvas id="l3Canvas" width="960" height="672"></canvas>' +
+              '<div class="l3-fps" id="l3Fps">— fps</div>' +
               '<p class="l3-hint" id="l3Hint">Drag the model to turn it</p></div>' +
             '<div class="l3-under">' +
               '<button class="btn" id="l3Play" type="button">Pause</button>' +
@@ -690,7 +782,7 @@
     q('#l3Play').addEventListener('click', function () {
       S.playing = !S.playing;
       syncControls();
-      if (S.playing) drawPreview();
+      if (S.playing) { drawPreview(); start(); }
     });
 
     q('#l3Reset').addEventListener('click', function () { applyPreset('turntable'); });
@@ -707,6 +799,7 @@
       ev.preventDefault();
       var x0 = ev.clientX, y0 = ev.clientY;
       var yaw0 = S.yaw, pitch0 = S.pitch;
+      var spinWas = S.spin;
       S.spin = false;
       syncControls();
       try { S.canvas.setPointerCapture(ev.pointerId); } catch (e) {}
@@ -719,9 +812,19 @@
       function up() {
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', up);
+        /* Dragging is a look-around, not a mode switch: put the spin back so the
+           preview — and any GIF or APNG exported afterwards — keeps turning
+           from wherever you left the model. */
+        if (spinWas) S.spin = true;
+        syncControls();
       }
       window.addEventListener('pointermove', move);
       window.addEventListener('pointerup', up);
+    });
+
+    /* clicking the dimmed area outside the shell closes it */
+    S.shell.addEventListener('pointerdown', function (ev) {
+      if (ev.target === S.shell) close();
     });
 
     document.addEventListener('keydown', onKey, true);
@@ -743,6 +846,9 @@
   function runExport(format) {
     if (S.busy) return;
     if (!S.img) { U.toast('Add a logo first', 'warn'); return; }
+    /* Spin off means every frame holds one angle while the sheen still travels,
+       which reads as a frozen GIF. Say so instead of exporting it silently. */
+    if (!S.spin) U.toast('Spin is off — the export will hold this angle', 'warn');
     S.busy = true;
     S.cancelled = false;
 
@@ -792,7 +898,7 @@
     if (S.shell) {
       S.shell.classList.remove('hidden');
       syncControls();
-      drawPreview();
+      fitCanvas();
       start();
       return;
     }
@@ -807,6 +913,12 @@
     }).join('');
     syncControls();
     updateMeta();
+    if (window.ResizeObserver) {
+      ro = new ResizeObserver(function () { fitCanvas(); });
+      ro.observe(S.canvas.parentNode);
+    }
+    window.addEventListener('resize', fitCanvas);
+    fitCanvas();
     if (S.img) { prepare(); drawPreview(); start(); }
   }
 
@@ -823,4 +935,15 @@
     state: S,
     presets: PRESETS
   };
+
+  /* Self-binding: every [data-logo3d] trigger — the topbar button, the Add card
+     or anything added later — opens the spinner from here, so the button can
+     never be dead because another script was cached or failed to load. */
+  document.addEventListener('click', function (ev) {
+    var el = ev.target && ev.target.closest ? ev.target.closest('[data-logo3d]') : null;
+    if (!el) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    open();
+  });
 })(window.OS = window.OS || {});

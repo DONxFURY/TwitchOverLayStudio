@@ -42,7 +42,7 @@
   /** Split a PNG into its IHDR bytes and concatenated IDAT payload. */
   function parsePng(bytes) {
     for (var s = 0; s < 8; s++) if (bytes[s] !== SIG[s]) throw new Error('Not a PNG frame');
-    var p = 8, ihdr = null, idat = [], w = 0, h = 0;
+    var p = 8, ihdr = null, parts = [], total = 0, w = 0, h = 0;
     while (p + 8 <= bytes.length) {
       var len = ((bytes[p] << 24) | (bytes[p + 1] << 16) | (bytes[p + 2] << 8) | bytes[p + 3]) >>> 0;
       var type = String.fromCharCode(bytes[p + 4], bytes[p + 5], bytes[p + 6], bytes[p + 7]);
@@ -52,14 +52,20 @@
         w = ((data[0] << 24) | (data[1] << 16) | (data[2] << 8) | data[3]) >>> 0;
         h = ((data[4] << 24) | (data[5] << 16) | (data[6] << 8) | data[7]) >>> 0;
       } else if (type === 'IDAT') {
-        for (var i = 0; i < data.length; i++) idat.push(data[i]);
+        /* keep views and copy once — pushing byte-by-byte into a number array
+           cost 8 bytes per byte and blew up long APNG exports */
+        parts.push(data);
+        total += data.length;
       } else if (type === 'IEND') {
         break;
       }
       p += 12 + len;
     }
     if (!ihdr) throw new Error('PNG frame has no IHDR');
-    return { ihdr: ihdr, idat: new Uint8Array(idat), width: w, height: h };
+    var idat = new Uint8Array(total);
+    var at = 0;
+    for (var j = 0; j < parts.length; j++) { idat.set(parts[j], at); at += parts[j].length; }
+    return { ihdr: ihdr, idat: idat, width: w, height: h };
   }
 
   function concat(parts) {
@@ -77,11 +83,15 @@
    * @param {number} delayMs per-frame delay
    * @returns {Uint8Array}
    */
-  function build(pngFrames, delayMs) {
+  function build(pngFrames, delayMs, fps) {
     if (!pngFrames || !pngFrames.length) throw new Error('APNG needs at least one frame');
     var first = parsePng(pngFrames[0]);
     var w = first.width, h = first.height;
     var delay = Math.max(1, Math.round(delayMs || 40));
+    /* A whole frame rate is stored exactly as 1/fps rather than rounded to whole
+       milliseconds — 60 fps becomes 16.67 ms and 100 fps becomes 10 ms, where
+       milliseconds alone would quietly drift. */
+    var rate = (fps && fps > 0 && fps <= 1000) ? Math.round(fps) : 0;
 
     var parts = [];
     parts.push(new Uint8Array(SIG));
@@ -103,10 +113,16 @@
       fctl.set(u32(h), 8);
       fctl.set(u32(0), 12);
       fctl.set(u32(0), 16);
-      fctl[20] = (delay >> 8) & 255;
-      fctl[21] = delay & 255;
-      fctl[22] = 0x03;               /* denominator 1000 */
-      fctl[23] = 0xE8;
+      if (rate) {
+        fctl[20] = 0; fctl[21] = 1;  /* numerator 1 */
+        fctl[22] = (rate >> 8) & 255;
+        fctl[23] = rate & 255;       /* denominator = fps */
+      } else {
+        fctl[20] = (delay >> 8) & 255;
+        fctl[21] = delay & 255;
+        fctl[22] = 0x03;             /* denominator 1000 */
+        fctl[23] = 0xE8;
+      }
       fctl[24] = 0;                  /* dispose: none */
       fctl[25] = 0;                  /* blend: source (keeps alpha) */
       parts.push(chunk('fcTL', fctl));

@@ -123,15 +123,28 @@
     var codeSize = minCodeSize + 1;
     var nextCode = eoiCode + 1;
     var dict = new Map();
-    var out = [];
+    /* A plain array of numbers costs 8 bytes per byte of output and doubles on
+       every regrow; a typed buffer costs one, which is what keeps big exports
+       inside the tab's memory budget. */
+    var out = new Uint8Array(Math.max(4096, (indices.length >> 1) + 1024));
+    var olen = 0;
     var cur = 0;
     var bits = 0;
+
+    function push(b) {
+      if (olen >= out.length) {
+        var grown = new Uint8Array(out.length * 2);
+        grown.set(out);
+        out = grown;
+      }
+      out[olen++] = b;
+    }
 
     function emit(code) {
       cur |= code << bits;
       bits += codeSize;
       while (bits >= 8) {
-        out.push(cur & 255);
+        push(cur & 255);
         cur >>>= 8;
         bits -= 8;
       }
@@ -161,41 +174,64 @@
     }
     emit(prefix);
     emit(eoiCode);
-    if (bits > 0) out.push(cur & 255);
-    return out;
+    if (bits > 0) push(cur & 255);
+    return out.subarray(0, olen);
   }
 
   /* ------------------------------------------------------------- writer */
 
-  function Writer() {
-    this.buf = [];
+  function Writer(size) {
+    this.buf = new Uint8Array(Math.max(4096, size || 1 << 16));
+    this.len = 0;
   }
-  Writer.prototype.u8 = function (v) { this.buf.push(v & 255); };
-  Writer.prototype.u16 = function (v) { this.buf.push(v & 255, (v >> 8) & 255); };
+  Writer.prototype.grow = function (need) {
+    if (this.len + need <= this.buf.length) return;
+    var cap = this.buf.length;
+    while (cap < this.len + need) cap *= 2;
+    var next = new Uint8Array(cap);
+    next.set(this.buf.subarray(0, this.len));
+    this.buf = next;
+  };
+  Writer.prototype.u8 = function (v) { this.grow(1); this.buf[this.len++] = v & 255; };
+  Writer.prototype.u16 = function (v) { this.u8(v); this.u8(v >> 8); };
+  Writer.prototype.raw = function (bytes) {
+    this.grow(bytes.length);
+    this.buf.set(bytes, this.len);
+    this.len += bytes.length;
+  };
   Writer.prototype.str = function (s) {
-    for (var i = 0; i < s.length; i++) this.buf.push(s.charCodeAt(i) & 255);
+    this.grow(s.length);
+    for (var i = 0; i < s.length; i++) this.buf[this.len++] = s.charCodeAt(i) & 255;
   };
   Writer.prototype.block = function (bytes) {
     for (var p = 0; p < bytes.length; p += 255) {
       var n = Math.min(255, bytes.length - p);
       this.u8(n);
-      for (var k = 0; k < n; k++) this.buf.push(bytes[p + k]);
+      this.raw(bytes.subarray(p, p + n));
     }
     this.u8(0);
   };
+  Writer.prototype.bytes = function () { return this.buf.slice(0, this.len); };
 
   /**
    * Build an animated GIF.
    * @param {Object} o {width, height, palette, frames:[{indices, delayCs}], loop}
    * @returns {Uint8Array}
    */
-  function build(o) {
+  /**
+   * Incremental GIF: write the header once, then hand it one frame at a time.
+   * Exporters use this so a long animation never has to hold every frame's
+   * pixels — peak memory is the compressed file plus the frame being encoded.
+   * @returns {{frame: function(Uint8Array, number), bytes: function(): Uint8Array}}
+   */
+  /**
+   * GIF header, shared by the serial and worker-backed writers so the two can
+   * never drift apart.
+   */
+  function header(o) {
     var w = o.width, h = o.height;
     var pal = o.palette || [[0, 0, 0]];
-    var frames = o.frames || [];
-    if (!frames.length) throw new Error('GIF needs at least one frame');
-
-    var W = new Writer();
+    var W = new Writer(1 << 18);
     W.str('GIF89a');
     W.u16(w);
     W.u16(h);
@@ -216,25 +252,195 @@
     W.u8(0x21); W.u8(0xFF); W.u8(11);
     W.str('NETSCAPE2.0');
     W.u8(3); W.u8(1); W.u16(o.loop == null ? 0 : o.loop); W.u8(0);
-
-    frames.forEach(function (f) {
-      var delay = Math.max(1, Math.round(f.delayCs || 4));
-      /* graphic control: disposal 2 (restore to background) + transparency */
-      W.u8(0x21); W.u8(0xF9); W.u8(4);
-      W.u8(0x09);
-      W.u16(delay);
-      W.u8(0);   /* transparent index */
-      W.u8(0);   /* block terminator */
-      /* image descriptor */
-      W.u8(0x2C);
-      W.u16(0); W.u16(0); W.u16(w); W.u16(h); W.u8(0);
-      W.u8(8);
-      W.block(lzw(f.indices, 8));
-    });
-
-    W.u8(0x3B);
-    return new Uint8Array(W.buf);
+    return { W: W, w: w, h: h };
   }
 
-  OS.Gif = { build: build, palette: palette, lut: lut, quantize: quantize, lzw: lzw };
-})(window.OS = window.OS || {});
+  function frameBlock(W, w, h, bytes, delayCs) {
+    var delay = Math.max(1, Math.round(delayCs || 4));
+    /* graphic control: disposal 2 (restore to background) + transparency */
+    W.u8(0x21); W.u8(0xF9); W.u8(4);
+    W.u8(0x09);
+    W.u16(delay);
+    W.u8(0);   /* transparent index */
+    W.u8(0);   /* block terminator */
+    /* image descriptor */
+    W.u8(0x2C);
+    W.u16(0); W.u16(0); W.u16(w); W.u16(h); W.u8(0);
+    W.u8(8);
+    W.block(bytes);
+  }
+
+  function writer(o) {
+    var hd = header(o), W = hd.W;
+    return {
+      frame: function (indices, delayCs) {
+        frameBlock(W, hd.w, hd.h, lzw(indices, 8), delayCs);
+      },
+      bytes: function () { W.u8(0x3B); return W.bytes(); }
+    };
+  }
+
+  /**
+   * Worker-backed writer with the same interface as writer().
+   *
+   * Once the palette is fixed every frame compresses independently, so the LZW
+   * pass — the bulk of a GIF export — is handed to a pool of workers and the
+   * export uses every core instead of one. Blocks are appended strictly in
+   * order, so the bytes match the single-threaded writer exactly. `frame()`
+   * resolves when a worker picks the frame up, which keeps one frame of pixels
+   * queued in the page no matter how long the animation is.
+   *
+   * @returns {Object|null} null when workers are unavailable
+   */
+  function par(o, requested) {
+    if (typeof Worker === 'undefined') return null;
+    var cores = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4;
+    var n = Math.max(1, Math.min(requested || cores, 8));
+    var hd = header(o), W = hd.W;
+    var workers = [], i;
+    for (i = 0; i < n; i++) {
+      try { workers.push(new Worker('js/gifworker.js')); } catch (e) { break; }
+    }
+    if (!workers.length) return null;
+
+    var idle = workers.slice();
+    var waiting = [];      /* painted, not yet picked up */
+    var done = {};         /* id -> compressed bytes */
+    var delayOf = {};      /* id -> delay in centiseconds */
+    var seq = 0, expect = 0, total = 0, live = 0;
+    var settle = null;
+
+    function emit() {
+      while (done[expect] !== undefined) {
+        frameBlock(W, hd.w, hd.h, done[expect], delayOf[expect]);
+        delete done[expect];
+        delete delayOf[expect];
+        expect++;
+      }
+      if (settle && !live && !waiting.length && expect === total) {
+        var fn = settle;
+        settle = null;
+        fn();
+      }
+    }
+
+    function assign(wk) {
+      var job = waiting.shift();
+      idle.push(wk);
+      if (!job) return;
+      idle.pop();
+      wk.job = job;
+      live++;
+      wk.postMessage({ id: job.id, indices: job.indices, minCode: 8 });
+      job.resolve();
+    }
+
+    function pump() {
+      while (idle.length && waiting.length) assign(idle.pop());
+      /* if every worker died, finish the rest here rather than hang */
+      while (!workers.length && waiting.length) {
+        var job = waiting.shift();
+        done[job.id] = lzw(job.indices, 8).slice();
+        job.resolve();
+      }
+      emit();
+    }
+
+    workers.forEach(function (wk) {
+      wk.onmessage = function (ev) {
+        done[ev.data.id] = new Uint8Array(ev.data.bytes);
+        wk.job = null;
+        live--;
+        idle.push(wk);
+        pump();
+      };
+      /* A dead worker must not lose its frame: compress that one on this thread
+         and carry on with one fewer worker. */
+      wk.onerror = function () {
+        var job = wk.job;
+        wk.job = null;
+        if (job && done[job.id] === undefined) {
+          done[job.id] = lzw(job.indices, 8).slice();
+          if (live) live--;
+        }
+        try { wk.terminate(); } catch (e) { /* ignore */ }
+        var at = workers.indexOf(wk);
+        if (at >= 0) workers.splice(at, 1);
+        pump();
+      };
+    });
+
+    return {
+      frame: function (indices, delayCs) {
+        var id = seq++;
+        total++;
+        delayOf[id] = delayCs;
+        return new Promise(function (resolve) {
+          waiting.push({ id: id, indices: indices, resolve: resolve });
+          pump();
+        });
+      },
+      bytes: function () {
+        return new Promise(function (resolve) { settle = resolve; pump(); })
+          .then(function () {
+            workers.forEach(function (wk) { try { wk.terminate(); } catch (e) { /* ignore */ } });
+            W.u8(0x3B);
+            return W.bytes();
+          });
+      }
+    };
+  }
+
+  /* Centisecond delays are the hard ceiling on GIF smoothness: the smallest
+     delay a browser honours is 2cs, so 50 fps is the fastest a GIF can play.
+     Anything above that has to be resampled down, not encoded faster. */
+  var MAX_FPS = 50;
+
+  function rate(fps) {
+    return Math.max(1, Math.min(MAX_FPS, Math.round(fps || 20)));
+  }
+
+  /**
+   * Per-frame delays in centiseconds for `count` frames at `fps`.
+   * Rounding 100 / fps once and reusing it drifts (24 fps becomes 25, 30 becomes
+   * 33.3 and a 60 fps request becomes 50), so every delay is derived from the
+   * intended timeline and absorbs the previous rounding error instead.
+   */
+  function delays(count, fps, step) {
+    var r = rate(fps);
+    step = step || 1;
+    var out = [], emitted = 0;
+    for (var i = 1; i <= count; i++) {
+      var want = Math.round((i * step / r) * 100);
+      var d = Math.max(2, want - emitted);
+      out.push(d);
+      emitted += d;
+    }
+    return out;
+  }
+
+  /**
+   * Frame budget. A GIF holds every compressed frame until the file is
+   * assembled, so thin the frame count when frames × pixels would be absurd.
+   * The caller multiplies the frame delay by `step`, so the loop still lasts as
+   * long as the animation it came from — choppier, never a crashed tab.
+   */
+  function plan(frames, w, h, maxPixels) {
+    var budget = maxPixels || 200e6;
+    var step = Math.max(1, Math.ceil((frames * w * h) / budget));
+    return { step: step, count: Math.max(1, Math.ceil(frames / step)) };
+  }
+
+  function build(o) {
+    var frames = o.frames || [];
+    if (!frames.length) throw new Error('GIF needs at least one frame');
+    var g = writer(o);
+    for (var i = 0; i < frames.length; i++) g.frame(frames[i].indices, frames[i].delayCs);
+    return g.bytes();
+  }
+
+  OS.Gif = {
+    build: build, writer: writer, par: par, plan: plan, delays: delays, rate: rate, MAX_FPS: MAX_FPS,
+    palette: palette, lut: lut, quantize: quantize, lzw: lzw
+  };
+})(typeof window !== 'undefined' ? (window.OS = window.OS || {}) : (self.OS = self.OS || {}));

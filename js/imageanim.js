@@ -617,30 +617,41 @@
 
     if (format === 'gif') {
       /* pass 1 — palette from a dozen sample frames, so frames are never all held in RAM */
-      var stride = Math.max(1, Math.floor(count / 12));
+      /* 50 fps is the GIF ceiling (2cs delays); resample instead of encoding a
+         rate no player honours, and keep the loop's real duration. */
+      var rate = OS.Gif.rate(fps);
+      var gifCount = Math.max(1, Math.round(S.seconds * rate));
+      if (rate < fps && U.toast) U.toast('GIF tops out at 50 fps — use APNG for ' + fps + ' fps', 'warn');
+      var stride = Math.max(1, Math.floor(gifCount / 12));
       var sample = [];
-      for (var i = 0; i < count; i += stride) {
+      for (var i = 0; i < gifCount; i += stride) {
         if (hooks && hooks.isCancelled && hooks.isCancelled()) throw new Error('cancelled');
-        drawTo(ctx, W, H, i / fps);
+        drawTo(ctx, W, H, i / rate);
         sample.push(ctx.getImageData(0, 0, W, H).data);
-        if (hooks && hooks.onProgress) hooks.onProgress(0.35 * Math.min(1, (i + stride) / count), { frames: count, phase: 'palette' });
+        if (hooks && hooks.onProgress) hooks.onProgress(0.35 * Math.min(1, (i + stride) / gifCount), { frames: gifCount, phase: 'palette' });
         await sleep(0);
       }
       var pal = OS.Gif.palette(sample, 255);
       var table = OS.Gif.lut(pal);
-      var gifFrames = [];
-      for (var f = 0; f < count; f++) {
+      /* Stream each frame into the file instead of collecting them first, so the
+         RGBA buffers of a long animation are never all resident. */
+      var plan = OS.Gif.plan(gifCount, W, H);
+      var dly = OS.Gif.delays(plan.count, rate, plan.step);
+      /* worker pool when available — same bytes, every core busy */
+      var g = (OS.Gif.par && OS.Gif.par({ width: W, height: H, palette: pal, loop: 0 })) ||
+              OS.Gif.writer({ width: W, height: H, palette: pal, loop: 0 });
+      for (var f = 0; f < plan.count; f++) {
         if (hooks && hooks.isCancelled && hooks.isCancelled()) throw new Error('cancelled');
-        drawTo(ctx, W, H, f / fps);
-        gifFrames.push({
-          indices: OS.Gif.quantize(ctx.getImageData(0, 0, W, H).data, W, H, table, 128),
-          delayCs: Math.max(2, Math.round(100 / fps))
-        });
-        if (hooks && hooks.onProgress) hooks.onProgress(0.35 + 0.65 * ((f + 1) / count), { frame: f + 1, frames: count, phase: 'encoding' });
+        drawTo(ctx, W, H, (f * plan.step) / rate);
+        await g.frame(
+          OS.Gif.quantize(ctx.getImageData(0, 0, W, H).data, W, H, table, 128),
+          dly[f]
+        );
+        if (hooks && hooks.onProgress) hooks.onProgress(0.35 + 0.65 * ((f + 1) / plan.count), { frame: f + 1, frames: plan.count, phase: 'encoding' });
         if (f % 2 === 0) await sleep(0);
       }
-      var bytes = OS.Gif.build({ width: W, height: H, palette: pal, frames: gifFrames, loop: 0 });
-      return { blob: new Blob([bytes], { type: 'image/gif' }), ext: 'gif', format: 'gif', frames: count, width: W, height: H, alpha: '1-bit', ms: Math.round(performance.now() - t0), requested: requested };
+      var bytes = await g.bytes();
+      return { blob: new Blob([bytes], { type: 'image/gif' }), ext: 'gif', format: 'gif', frames: plan.count, fps: rate, requestedFps: fps, width: W, height: H, alpha: '1-bit', ms: Math.round(performance.now() - t0), requested: requested };
     }
 
     var pngs = [];
@@ -651,7 +662,7 @@
       if (hooks && hooks.onProgress) hooks.onProgress((p + 1) / count, { frame: p + 1, frames: count, phase: 'encoding' });
       if (p % 2 === 0) await sleep(0);
     }
-    var apng = OS.Apng.build(pngs, Math.round(1000 / fps));
+    var apng = OS.Apng.build(pngs, Math.round(1000 / fps), fps);
     return { blob: new Blob([apng], { type: 'image/png' }), ext: 'png', mime: 'image/png', format: 'apng', frames: count, width: W, height: H, alpha: '8-bit', ms: Math.round(performance.now() - t0), requested: requested };
   }
 
@@ -685,7 +696,7 @@
             '<div class="ia-row2">' +
               '<label class="ia-field"><span>Seconds</span><input id="iaSec" type="number" min="1" max="30" step="0.5" value="4"></label>' +
               '<label class="ia-field"><span>FPS</span><select id="iaFps">' +
-                '<option>12</option><option>15</option><option selected>20</option><option>24</option><option>30</option>' +
+                '<option>12</option><option>15</option><option selected>20</option><option>24</option><option>30</option><option>60</option><option>100</option>' +
               '</select></label>' +
             '</div>' +
             '<label class="ia-check"><input type="checkbox" id="iaLoop" checked><span>Seamless loop</span></label>' +

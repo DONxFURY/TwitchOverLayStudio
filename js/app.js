@@ -33,7 +33,6 @@
       this.restorePrefs();
       this.bindTop();
       this.bindAnimate();
-      this.bindLogo3d();
       this.bindTabs();
       this.bindScenes();
       this.bindAdd();
@@ -588,12 +587,6 @@
     bindAnimate: function () {
       U.$$('[data-animate]').forEach(function (b) {
         b.addEventListener('click', function () { OS.ImageAnim.open(); });
-      });
-    },
-
-    bindLogo3d: function () {
-      U.$$('[data-logo3d]').forEach(function (b) {
-        b.addEventListener('click', function () { OS.Logo3D.open(); });
       });
     },
 

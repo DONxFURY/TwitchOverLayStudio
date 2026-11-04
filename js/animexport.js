@@ -65,41 +65,59 @@
     canvas.height = H;
     var ctx = canvas.getContext('2d', { alpha: true, willReadFrequently: true });
 
-    var buffers = [];
-    for (var i = 0; i < tl.frames; i++) {
-      if (hooks && hooks.isCancelled && hooks.isCancelled()) throw new Error('cancelled');
+    /* This used to paint every frame into an RGBA array first: a 1080p minute
+       at 30 fps is 15 GB and killed the tab. Frames are now painted twice —
+       once for the palette sample, once to encode — and never accumulated. */
+    /* Centisecond delays cap GIF at 50 fps, so a 60 fps request is resampled to
+       50 and timing is diffused — otherwise the scene plays 20% slow. */
+    var rate = OS.Gif.rate(fps);
+    if (rate < fps && OS.U && OS.U.toast) OS.U.toast('GIF tops out at 50 fps — pick APNG or MP4 for ' + fps + ' fps', 'warn');
+    var gifFrameTotal = Math.max(1, Math.round(tl.totalDur * rate));
+    var plan = OS.Gif.plan(gifFrameTotal, W, H);
+    var dly = OS.Gif.delays(plan.count, rate, plan.step);
+
+    function paintFrameAt(i) {
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, W, H);
       ctx.scale(W / 1920, H / 1080);
-      paintFrame(ctx, tl.plan, i / fps, doc, imgs, true);
-      buffers.push(ctx.getImageData(0, 0, W, H).data);
-      if (hooks && hooks.onProgress) {
-        hooks.onProgress((i + 1) / tl.frames * 0.6, { frame: i + 1, frames: tl.frames, phase: 'painting' });
-      }
-      if (i % 3 === 0) await sleep(0);
+      paintFrame(ctx, tl.plan, (i * plan.step) / rate, doc, imgs, true);
     }
 
-    var stride = Math.max(1, Math.floor(tl.frames / 12));
-    var sample = buffers.filter(function (_, i) { return i % stride === 0; });
+    /* pass 1 — palette from a dozen evenly spaced frames */
+    var stride = Math.max(1, Math.floor(plan.count / 12));
+    var sample = [];
+    for (var s = 0; s < plan.count; s += stride) {
+      if (hooks && hooks.isCancelled && hooks.isCancelled()) throw new Error('cancelled');
+      paintFrameAt(s);
+      sample.push(ctx.getImageData(0, 0, W, H).data);
+      if (hooks && hooks.onProgress) {
+        hooks.onProgress(0.25 * Math.min(1, (s + 1) / plan.count), { frame: s + 1, frames: plan.count, phase: 'palette' });
+      }
+      await sleep(0);
+    }
     var pal = OS.Gif.palette(sample, 255);
     var table = OS.Gif.lut(pal);
 
-    var gifFrames = [];
-    for (var f = 0; f < buffers.length; f++) {
-      gifFrames.push({
-        indices: OS.Gif.quantize(buffers[f], W, H, table, opts.alphaThreshold || 128),
-        delayCs: Math.max(2, Math.round(100 / fps))
-      });
+    /* pass 2 — paint, quantise and compress straight into the file */
+    var g = (OS.Gif.par && OS.Gif.par({ width: W, height: H, palette: pal, loop: 0 })) ||
+            OS.Gif.writer({ width: W, height: H, palette: pal, loop: 0 });
+    for (var f = 0; f < plan.count; f++) {
+      if (hooks && hooks.isCancelled && hooks.isCancelled()) throw new Error('cancelled');
+      paintFrameAt(f);
+      await g.frame(
+        OS.Gif.quantize(ctx.getImageData(0, 0, W, H).data, W, H, table, opts.alphaThreshold || 128),
+        dly[f]
+      );
       if (hooks && hooks.onProgress) {
-        hooks.onProgress(0.6 + 0.4 * ((f + 1) / buffers.length), { frame: f + 1, frames: buffers.length, phase: 'encoding' });
+        hooks.onProgress(0.25 + 0.75 * ((f + 1) / plan.count), { frame: f + 1, frames: plan.count, phase: 'encoding' });
       }
-      if (f % 4 === 0) await sleep(0);
+      if (f % 2 === 0) await sleep(0);
     }
 
-    var bytes = OS.Gif.build({ width: W, height: H, palette: pal, frames: gifFrames, loop: 0 });
+    var bytes = await g.bytes();
     return {
       blob: new Blob([bytes], { type: 'image/gif' }),
-      ext: 'gif', frames: tl.frames, width: W, height: H, alpha: '1-bit'
+      ext: 'gif', frames: plan.count, width: W, height: H, alpha: '1-bit'
     };
   }
 
@@ -137,7 +155,7 @@
       if (i % 2 === 0) await sleep(0);
     }
 
-    var bytes = OS.Apng.build(pngs, Math.round(1000 / fps));
+    var bytes = OS.Apng.build(pngs, Math.round(1000 / fps), fps);
     return {
       blob: new Blob([bytes], { type: 'image/apng' }),
       ext: 'png', mime: 'image/png', frames: tl.frames, width: W, height: H, alpha: '8-bit'
@@ -260,7 +278,7 @@
       };
     }
 
-    var apng = OS.Apng.build(buffers, Math.round(1000 / fps));
+    var apng = OS.Apng.build(buffers, Math.round(1000 / fps), fps);
     return {
       blob: new Blob([apng], { type: 'image/png' }), ext: 'png', mime: 'image/png', format: 'apng',
       frames: count, width: W, height: H, alpha: '8-bit', ms: Math.round(performance.now() - t0)

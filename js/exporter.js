@@ -24,6 +24,72 @@
     ctx.closePath();
   }
 
+  /* ------------------------------------------------------- animated sources */
+  /* An <img> of an animated GIF or APNG only ever paints its first frame on a
+     canvas, while the editor shows it moving (CSS background-image). Any logo
+     that is itself an animation therefore froze in every canvas export, so the
+     frames are decoded up front and picked by the export clock. */
+  var ANIM_MAX_FRAMES = 96;
+  var ANIM_MAX_PIXELS = 160e6;
+
+  function sniffAnim(bytes) {
+    if (!bytes || bytes.length < 16) return null;
+    if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return 'image/gif';
+    if (bytes[0] === 0x89 && bytes[1] === 0x50) {
+      /* APNG is a PNG carrying an acTL chunk next to its IHDR */
+      var head = String.fromCharCode.apply(null, bytes.subarray(0, Math.min(1024, bytes.length)));
+      return head.indexOf('acTL') >= 0 ? 'image/png' : null;
+    }
+    if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes.length > 16 &&
+        bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) {
+      var w = String.fromCharCode.apply(null, bytes.subarray(0, Math.min(128, bytes.length)));
+      return w.indexOf('ANIM') >= 0 || w.indexOf('ANMF') >= 0 ? 'image/webp' : null;
+    }
+    return null;
+  }
+
+  async function decodeAnim(bytes, type) {
+    var dec = new ImageDecoder({ data: bytes, type: type });
+    await dec.tracks.ready;
+    var track = dec.tracks.selectedTrack;
+    var total = track ? track.frameCount : 0;
+    if (!total || total < 2) { dec.close(); return null; }
+
+    var probe = await dec.decode({ frameIndex: 0 });
+    var iw = probe.image.displayWidth || probe.image.codedWidth;
+    var ih = probe.image.displayHeight || probe.image.codedHeight;
+    probe.image.close();
+
+    /* thin very long animations rather than holding hundreds of bitmaps */
+    var step = Math.max(1, Math.ceil(total / ANIM_MAX_FRAMES), Math.ceil((total * iw * ih) / ANIM_MAX_PIXELS));
+    var frames = [], sum = 0;
+    for (var i = 0; i < total; i += step) {
+      var res = await dec.decode({ frameIndex: i });
+      var bmp = await createImageBitmap(res.image);
+      var us = res.image.duration || 0;
+      res.image.close();
+      var dur = (us > 0 ? us : 100000) / 1e6 * step;
+      frames.push({ bmp: bmp, dur: dur });
+      sum += dur;
+    }
+    dec.close();
+    return frames.length > 1 ? { frames: frames, total: sum } : null;
+  }
+
+  function attachAnim(src, img) {
+    if (typeof ImageDecoder !== 'function' || typeof fetch !== 'function') return Promise.resolve();
+    return fetch(src)
+      .then(function (r) { return r.arrayBuffer(); })
+      .then(function (buf) {
+        var bytes = new Uint8Array(buf);
+        var type = sniffAnim(bytes);
+        if (!type) return null;
+        return decodeAnim(bytes, type);
+      })
+      .then(function (anim) { if (anim) img.__anim = anim; })
+      .catch(function () { /* keep the still frame */ });
+  }
+
   function loadImages(doc) {
     var srcs = [];
     doc.scenes.forEach(function (s) {
@@ -35,7 +101,7 @@
       return new Promise(function (resolve) {
         var img = new Image();
         img.crossOrigin = 'anonymous';
-        img.onload = function () { resolve([src, img]); };
+        img.onload = function () { attachAnim(src, img).then(function () { resolve([src, img]); }); };
         img.onerror = function () { resolve([src, null]); };
         img.src = src;
       });
@@ -111,7 +177,7 @@
 
     /* content */
     if (layer.type === 'text') drawText(ctx, layer, theme, doc, time);
-    if (layer.type === 'image') drawImage(ctx, layer, imgs, theme);
+    if (layer.type === 'image') drawImage(ctx, layer, imgs, theme, time);
     if (layer.type === 'camera') drawCamera(ctx, layer, theme);
     if (layer.type === 'chat') drawChat(ctx, layer, theme);
     if (layer.type === 'frame' && OS.Frames) OS.Frames.draw(ctx, layer, theme, layer.w, layer.h, x, y);
@@ -164,7 +230,7 @@
     });
   }
 
-  function drawImage(ctx, layer, imgs, theme) {
+  function drawImage(ctx, layer, imgs, theme, time) {
     var src = layer.img && layer.img.src;
     var img = src && imgs ? imgs[src] : null;
     if (!img) {
@@ -186,6 +252,19 @@
     } else if (fit === 'cover') {
       if (ar > boxAr) { dw = layer.h * ar; dx = -dw / 2; }
       else { dh = layer.w / ar; dy = -dh / 2; }
+    }
+    /* animated sources advance with the export clock, so a spinning logo really
+       spins inside the GIF, the APNG and the MP4 instead of holding frame one */
+    var anim = img.__anim;
+    if (anim && anim.frames && anim.frames.length > 1) {
+      var t = Math.max(0, time || 0) % (anim.total || 1);
+      var acc = 0, pick = anim.frames[0];
+      for (var i = 0; i < anim.frames.length; i++) {
+        acc += anim.frames[i].dur;
+        if (t < acc) { pick = anim.frames[i]; break; }
+      }
+      ctx.drawImage(pick.bmp, dx, dy, dw, dh);
+      return;
     }
     ctx.drawImage(img, dx, dy, dw, dh);
   }

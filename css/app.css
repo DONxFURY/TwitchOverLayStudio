@@ -1219,6 +1219,14 @@ body.preview-mode .stage-sel, body.preview-mode .stage-guides { display: none; }
   text-align: center; font-size: 10px; color: var(--muted);
   pointer-events: none; opacity: .85;
 }
+.l3-fps {
+  position: absolute; top: 8px; right: 10px;
+  font: 600 10px/1 var(--mono); letter-spacing: .02em;
+  color: var(--muted); pointer-events: none; white-space: nowrap;
+  padding: 3px 6px; border-radius: 6px;
+  background: rgba(10, 14, 22, .62); border: 1px solid var(--stroke);
+}
+.l3-fps.warn { color: #ffcf6b; border-color: rgba(255, 207, 107, .35); }
 .l3-under { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .l3-prog { display: flex; align-items: center; gap: 8px; }
 .l3-prog.hidden { display: none; }
